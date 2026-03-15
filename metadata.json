@@ -1,0 +1,5 @@
+{
+  "name": "HandAttend AI",
+  "description": "A web platform that converts Arabic handwritten attendance sheets into structured Excel files using AI.",
+  "requestFramePermissions": []
+}

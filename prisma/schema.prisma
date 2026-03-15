@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String            @id @default(cuid())
+  email            String            @unique
+  passwordHash     String
+  role             String            @default("USER") // ADMIN, USER
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  AttendanceSheets AttendanceSheet[]
+  Logs             Log[]
+}
+
+model Employee {
+  id               String             @id @default(cuid())
+  employeeId       String             @unique // The actual ID used in the company
+  nameArabic       String
+  department       String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  RecognizedData   RecognizedData[]
+  AttendanceRecord AttendanceRecord[]
+}
+
+model AttendanceSheet {
+  id             String           @id @default(cuid())
+  userId         String
+  user           User             @relation(fields: [userId], references: [id])
+  fileUrl        String
+  fileName       String
+  status         String           @default("PENDING") // PENDING, PROCESSING, REVIEW_NEEDED, COMPLETED, FAILED
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  RecognizedData RecognizedData[]
+}
+
+model RecognizedData {
+  id                  String          @id @default(cuid())
+  sheetId             String
+  sheet               AttendanceSheet @relation(fields: [sheetId], references: [id])
+  employeeId          String?
+  employee            Employee?       @relation(fields: [employeeId], references: [id])
+  rawNameText         String?         // The raw OCR text for the name
+  date                DateTime?
+  checkIn             String?         // e.g., "07:30"
+  checkOut            String?         // e.g., "15:00"
+  confidenceScore     Float           // 0.0 to 1.0
+  isManuallyCorrected Boolean         @default(false)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+}
+
+model AttendanceRecord {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  date       DateTime
+  checkIn    String?
+  checkOut   String?
+  status     String   @default("PRESENT") // PRESENT, ABSENT, LATE
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([employeeId, date])
+}
+
+model Log {
+  id        String   @id @default(cuid())
+  action    String
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  details   String?
+  timestamp DateTime @default(now())
+}
