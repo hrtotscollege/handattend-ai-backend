@@ -31,10 +31,15 @@ export default function Home() {
                   Convert messy, handwritten Arabic attendance sheets into structured Excel files with 99% accuracy using advanced AI and OCR.
                 </p>
               </div>
-              <div className="space-x-4">
+              <div className="space-x-4 flex items-center justify-center">
                 <Button size="lg" asChild>
-                  <Link href="/dashboard" suppressHydrationWarning>
-                    Go to Dashboard <ArrowRight className="ml-2 h-4 w-4" />
+                  <Link href="/register" suppressHydrationWarning>
+                    Get Started <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button size="lg" variant="outline" asChild>
+                  <Link href="/login" suppressHydrationWarning>
+                    Sign In
                   </Link>
                 </Button>
               </div>

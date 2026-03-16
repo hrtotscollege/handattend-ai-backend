@@ -13,6 +13,8 @@ export default function UploadPage() {
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">("idle")
 
+  const [errorMessage, setErrorMessage] = useState<string>("")
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setFiles((prev) => [...prev, ...acceptedFiles])
   }, [])
@@ -35,20 +37,138 @@ export default function UploadPage() {
 
     setUploading(true)
     setStatus("uploading")
-    setProgress(0)
+    setProgress(10)
+    setErrorMessage("")
 
-    // Simulate upload and processing
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval)
-          setUploading(false)
-          setStatus("success")
-          return 100
+    try {
+      // Import GoogleGenAI dynamically or ensure it's available
+      const { GoogleGenAI, Type } = await import("@google/genai");
+      
+      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim();
+      if (!apiKey) {
+        throw new Error("Gemini API key is missing. Please configure it in the settings.");
+      }
+      const ai = new GoogleGenAI({ apiKey });
+
+      // Fetch learning data (previously corrected rows)
+      let learningContext = "";
+      try {
+        const learningRes = await fetch("/api/learning");
+        if (learningRes.ok) {
+          const learningData = await learningRes.json();
+          if (learningData && learningData.length > 0) {
+            learningContext = "\n\nHere are some examples of previously corrected data to help you learn the handwriting style and expected output:\n";
+            learningData.forEach((item: any, index: number) => {
+              learningContext += `Example ${index + 1}:\n`;
+              learningContext += `- raw_name: ${item.rawNameText}\n`;
+              if (item.employee?.nameArabic) {
+                learningContext += `- Corrected/Expected Name: ${item.employee.nameArabic}\n`;
+              }
+              learningContext += `- check_in: ${item.checkIn || 'N/A'}\n`;
+              learningContext += `- check_out: ${item.checkOut || 'N/A'}\n\n`;
+            });
+          }
         }
-        return prev + 10
-      })
-    }, 500)
+      } catch (e) {
+        console.error("Failed to fetch learning data", e);
+      }
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        // Convert file to base64
+        const base64Data = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64 = (reader.result as string).split(',')[1];
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        const prompt = `You are an AI assistant that extracts attendance data from Arabic handwritten attendance sheets.
+Please extract the following information for each row:
+- raw_name: The employee's name written in Arabic.
+- date: The date of the attendance in YYYY-MM-DD format.
+- check_in: The check-in time in HH:MM format.
+- check_out: The check-out time in HH:MM format.
+- confidence: Your confidence score in reading the handwriting (0.0 to 1.0).
+
+Return the data as a JSON array of objects.${learningContext}`;
+
+        setProgress(30);
+
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: {
+            parts: [
+              {
+                inlineData: {
+                  data: base64Data,
+                  mimeType: file.type,
+                },
+              },
+              {
+                text: prompt,
+              },
+            ],
+          },
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  raw_name: { type: Type.STRING },
+                  date: { type: Type.STRING },
+                  check_in: { type: Type.STRING },
+                  check_out: { type: Type.STRING },
+                  confidence: { type: Type.NUMBER },
+                },
+                required: ["raw_name", "date", "check_in", "check_out", "confidence"],
+              },
+            },
+          },
+        });
+
+        setProgress(70);
+
+        const text = response.text;
+        if (!text) {
+          throw new Error("No text returned from Gemini");
+        }
+
+        const extractedData = JSON.parse(text);
+
+        const serverResponse = await fetch("/api/upload", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            fileName: file.name,
+            extractedData,
+          }),
+        });
+
+        if (!serverResponse.ok) {
+          throw new Error(`Server save failed for ${file.name}`);
+        }
+
+        // Update progress
+        setProgress(10 + Math.floor(((i + 1) / files.length) * 90));
+      }
+
+      setStatus("success")
+    } catch (error: any) {
+      console.error("Upload error:", error)
+      setErrorMessage(error.message || "An error occurred during upload.")
+      setStatus("error")
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (
@@ -119,6 +239,13 @@ export default function UploadPage() {
                 <div className="flex items-center gap-2 text-green-600 bg-green-50 p-3 rounded-md">
                   <CheckCircle className="h-5 w-5" />
                   <span className="text-sm font-medium">Files successfully uploaded and processed!</span>
+                </div>
+              )}
+
+              {status === "error" && (
+                <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-md">
+                  <AlertCircle className="h-5 w-5" />
+                  <span className="text-sm font-medium">{errorMessage || "An error occurred during upload. Please try again."}</span>
                 </div>
               )}
 

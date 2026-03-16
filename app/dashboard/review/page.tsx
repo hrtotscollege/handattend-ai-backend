@@ -1,25 +1,36 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import * as XLSX from "xlsx"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Check, X, AlertTriangle, Save } from "lucide-react"
-
-// Mock data from AI Service
-const initialData = [
-  { id: "1", rawName: "أحمد محمد", matchedId: "EMP001", date: "2026-02-24", checkIn: "07:30", checkOut: "15:00", confidence: 0.95 },
-  { id: "2", rawName: "سارة خالد", matchedId: "EMP002", date: "2026-02-24", checkIn: "08:00", checkOut: "16:00", confidence: 0.88 },
-  { id: "3", rawName: "عمر عبدا", matchedId: null, date: "2026-02-24", checkIn: "07:45", checkOut: "15:30", confidence: 0.65 }, // Needs review
-  { id: "4", rawName: "فاطمة علي", matchedId: "EMP004", date: "2026-02-24", checkIn: "7.3", checkOut: "15:15", confidence: 0.75 }, // Needs review (time format)
-]
+import { Check, X, AlertTriangle, Save, Download } from "lucide-react"
 
 export default function ReviewPage() {
-  const [data, setData] = useState(initialData)
+  const [data, setData] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValues, setEditValues] = useState<any>({})
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await fetch('/api/review');
+        if (response.ok) {
+          const result = await response.json();
+          setData(result);
+        }
+      } catch (error) {
+        console.error("Failed to fetch review data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   const startEdit = (row: any) => {
     setEditingId(row.id)
@@ -31,16 +42,56 @@ export default function ReviewPage() {
     setEditValues({})
   }
 
-  const saveEdit = () => {
-    setData((prev) =>
-      prev.map((item) => (item.id === editingId ? { ...editValues, confidence: 1.0 } : item))
-    )
-    setEditingId(null)
+  const saveEdit = async () => {
+    try {
+      const response = await fetch('/api/review', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: editingId,
+          rawName: editValues.rawName,
+          matchedId: editValues.matchedId,
+          checkIn: editValues.checkIn,
+          checkOut: editValues.checkOut,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save changes');
+      }
+
+      setData((prev) =>
+        prev.map((item) => (item.id === editingId ? { ...editValues, confidence: 1.0 } : item))
+      )
+      setEditingId(null)
+    } catch (error) {
+      console.error("Error saving edit:", error);
+      alert("Failed to save changes. Please try again.");
+    }
   }
 
   const handleExport = () => {
-    // In a real app, this would call the backend to generate and download the Excel file
-    alert("Exporting to Excel...")
+    if (data.length === 0) {
+      alert("No data to export.");
+      return;
+    }
+
+    const exportData = data.map(row => ({
+      "Raw OCR Name": row.rawName || "",
+      "Matched Employee ID": row.matchedId || "Unmatched",
+      "Date": row.date || "",
+      "Check In": row.checkIn || "",
+      "Check Out": row.checkOut || "",
+      "Confidence": row.confidence ? `${(row.confidence * 100).toFixed(0)}%` : "Manual"
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance Data");
+
+    XLSX.writeFile(workbook, "attendance_export.xlsx");
   }
 
   return (
@@ -53,11 +104,23 @@ export default function ReviewPage() {
               Review low-confidence OCR results and correct them before exporting to Excel.
             </CardDescription>
           </div>
-          <Button onClick={handleExport}>
-            <Save className="mr-2 h-4 w-4" /> Export to Excel
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleExport}>
+              <Download className="mr-2 h-4 w-4" /> Export to Excel
+            </Button>
+            {editingId && (
+              <Button onClick={saveEdit} className="bg-green-600 hover:bg-green-700">
+                <Save className="mr-2 h-4 w-4" /> Save Current Edit
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
+          {loading ? (
+            <div className="text-center py-8 text-muted-foreground">Loading review data...</div>
+          ) : data.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">No data to review.</div>
+          ) : (
           <div className="rounded-md border">
             <Table>
               <TableHeader>
@@ -159,6 +222,7 @@ export default function ReviewPage() {
               </TableBody>
             </Table>
           </div>
+          )}
         </CardContent>
       </Card>
     </div>

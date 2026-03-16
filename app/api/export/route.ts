@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import * as XLSX from "xlsx"
+import { write, utils } from "xlsx"
 import { PrismaClient } from "@prisma/client"
 
 // const prisma = new PrismaClient()
@@ -37,12 +37,12 @@ export async function GET(req: Request) {
     }))
 
     // 3. Create Excel workbook
-    const worksheet = XLSX.utils.json_to_sheet(excelData)
-    const workbook = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance")
+    const worksheet = utils.json_to_sheet(excelData)
+    const workbook = utils.book_new()
+    utils.book_append_sheet(workbook, worksheet, "Attendance")
 
     // 4. Generate buffer
-    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" })
+    const buffer = write(workbook, { type: "buffer", bookType: "xlsx" })
 
     // 5. Return as downloadable file
     return new NextResponse(buffer, {

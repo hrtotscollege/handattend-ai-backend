@@ -1,11 +1,22 @@
+'use client';
+
 import Link from "next/link"
-import { FileText, Users, LayoutDashboard, Settings } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { FileText, Users, LayoutDashboard, Settings, LogOut } from "lucide-react"
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.push('/login');
+    router.refresh();
+  };
+
   return (
     <div className="flex min-h-screen w-full flex-col bg-muted/40">
       <aside className="fixed inset-y-0 left-0 z-10 hidden w-64 flex-col border-r bg-background sm:flex">
@@ -15,7 +26,7 @@ export default function DashboardLayout({
             <span className="">HandAttend AI</span>
           </Link>
         </div>
-        <div className="flex-1 overflow-auto py-2">
+        <div className="flex-1 overflow-auto py-2 flex flex-col justify-between">
           <nav className="grid items-start px-2 text-sm font-medium lg:px-4">
             <Link
               href="/dashboard"
@@ -58,6 +69,15 @@ export default function DashboardLayout({
               Settings
             </Link>
           </nav>
+          <div className="px-4 pb-4">
+            <button
+              onClick={handleLogout}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-all hover:text-destructive"
+            >
+              <LogOut className="h-4 w-4" />
+              Logout
+            </button>
+          </div>
         </div>
       </aside>
       <div className="flex flex-col sm:gap-4 sm:py-4 sm:pl-64">
