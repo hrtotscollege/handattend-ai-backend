@@ -1,12 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FileText, Users, CheckCircle, Clock } from "lucide-react"
-import { PrismaClient } from "@prisma/client"
+import { prisma } from "@/lib/prisma"
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  const prisma = new PrismaClient();
-  
   // Get start of today
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -71,8 +69,6 @@ export default async function DashboardPage() {
     }, 0);
     avgProcessingTimeToday = totalDiff / completedSheetsToday.length / 1000; // in seconds
   }
-
-  await prisma.$disconnect();
 
   return (
     <div className="grid gap-4 md:grid-cols-2 md:gap-8 lg:grid-cols-4">

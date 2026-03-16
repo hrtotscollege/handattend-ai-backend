@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server"
 import { write, utils } from "xlsx"
-import { PrismaClient } from "@prisma/client"
-
-// const prisma = new PrismaClient()
+import { prisma } from "@/lib/prisma"
 
 export async function GET(req: Request) {
   try {
@@ -14,18 +12,14 @@ export async function GET(req: Request) {
     }
 
     // 1. Fetch RecognizedData from DB
-    /*
     const recognizedData = await prisma.recognizedData.findMany({
       where: { sheetId },
       include: { employee: true }
     })
-    */
 
-    // Mock data for demonstration
-    const recognizedData = [
-      { employee: { employeeId: "EMP001", nameArabic: "أحمد محمد" }, date: new Date("2026-02-24"), checkIn: "07:30", checkOut: "15:00" },
-      { employee: { employeeId: "EMP002", nameArabic: "سارة خالد" }, date: new Date("2026-02-24"), checkIn: "08:00", checkOut: "16:00" },
-    ]
+    if (!recognizedData || recognizedData.length === 0) {
+      return NextResponse.json({ error: "No data found for this sheet" }, { status: 404 })
+    }
 
     // 2. Format data for Excel
     const excelData = recognizedData.map(item => ({

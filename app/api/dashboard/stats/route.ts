@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server"
-import { PrismaClient } from "@prisma/client"
+import { prisma } from "@/lib/prisma"
 
 export async function GET(req: Request) {
   try {
-    const prisma = new PrismaClient();
-    
     // Get start of today
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
@@ -69,8 +67,6 @@ export async function GET(req: Request) {
       }, 0);
       avgProcessingTimeToday = totalDiff / completedSheetsToday.length / 1000; // in seconds
     }
-
-    await prisma.$disconnect();
 
     return NextResponse.json({
       sheetsProcessedToday,

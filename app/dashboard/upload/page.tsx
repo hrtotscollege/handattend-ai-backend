@@ -42,7 +42,7 @@ export default function UploadPage() {
 
     try {
       // Import GoogleGenAI dynamically or ensure it's available
-      const { GoogleGenAI, Type } = await import("@google/genai");
+      const { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold, ThinkingLevel } = await import("@google/genai");
       
       const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY?.trim();
       if (!apiKey) {
@@ -53,11 +53,23 @@ export default function UploadPage() {
       // Fetch learning data (previously corrected rows)
       let learningContext = "";
       try {
-        const learningRes = await fetch("/api/learning");
+        const [learningRes, employeesRes] = await Promise.all([
+          fetch("/api/learning"),
+          fetch("/api/employees")
+        ]);
+
+        if (employeesRes.ok) {
+          const employeesData = await employeesRes.json();
+          if (employeesData && employeesData.length > 0) {
+            const employeeNames = employeesData.map((e: any) => e.nameArabic).join(", ");
+            learningContext += `\n\nKNOWN EMPLOYEES LIST (Use this list to match the handwritten names. If a name looks similar to one of these, it is highly likely to be that person):\n${employeeNames}\n`;
+          }
+        }
+
         if (learningRes.ok) {
           const learningData = await learningRes.json();
           if (learningData && learningData.length > 0) {
-            learningContext = "\n\nHere are some examples of previously corrected data to help you learn the handwriting style and expected output:\n";
+            learningContext += "\n\nHere are some examples of previously corrected data to help you learn the handwriting style and expected output:\n";
             learningData.forEach((item: any, index: number) => {
               learningContext += `Example ${index + 1}:\n`;
               learningContext += `- raw_name: ${item.rawNameText}\n`;
@@ -70,7 +82,7 @@ export default function UploadPage() {
           }
         }
       } catch (e) {
-        console.error("Failed to fetch learning data", e);
+        console.error("Failed to fetch learning or employee data", e);
       }
 
       for (let i = 0; i < files.length; i++) {
@@ -88,19 +100,24 @@ export default function UploadPage() {
         });
 
         const prompt = `You are an AI assistant that extracts attendance data from Arabic handwritten attendance sheets.
-Please extract the following information for each row:
-- raw_name: The employee's name written in Arabic.
-- date: The date of the attendance in YYYY-MM-DD format.
-- check_in: The check-in time in HH:MM format.
-- check_out: The check-out time in HH:MM format.
-- confidence: Your confidence score in reading the handwriting (0.0 to 1.0).
+${learningContext}
 
-Return the data as a JSON array of objects.${learningContext}`;
+CRITICAL INSTRUCTION 1: The attendance sheet typically contains 5 days of attendance for each person (e.g., Sunday to Thursday) in columns across the row. You MUST extract exactly 5 separate records for EACH person, one for each day. Even if a person was absent on a day, you MUST still output a record for that day with empty check_in and check_out times. If there are 10 people listed, you MUST output exactly 50 JSON objects.
+CRITICAL INSTRUCTION 2: Pay extremely close attention to the Arabic names. Transcribe them as accurately as possible. Look at the strokes carefully. Compare them against the KNOWN EMPLOYEES LIST provided above. If a handwritten name looks very similar to a name in the list, use the name from the list. Do not invent names that are not on the sheet.
+CRITICAL INSTRUCTION 3: Look for dates in the column headers or anywhere on the page to determine the date for each of the 5 days. You MUST try to find or infer the date for each day (e.g., if the week starts on 2025-02-22, the next days are 02-23, 02-24, etc.). If the year is missing, assume the current year. Ensure each of the 5 records for a person has a different date.
+CRITICAL INSTRUCTION 4: Do not skip any rows. Extract data for every single person listed on the sheet.
+
+Please extract the following information to create a flat JSON array. For EACH person, generate exactly 5 objects (one for each day):
+- raw_name: The employee's name written in Arabic. If unreadable, write "Unreadable". (This will be the same for the 5 records of this person).
+- date: The date of the attendance in YYYY-MM-DD format. You MUST try to find or infer this date from the column headers.
+- check_in: The check-in time in HH:MM format for that specific day. If missing or empty, return an empty string.
+- check_out: The check-out time in HH:MM format for that specific day. If missing or empty, return an empty string.
+- confidence: Your confidence score in reading the handwriting (0.0 to 1.0).`;
 
         setProgress(30);
 
         const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: "gemini-3.1-pro-preview",
           contents: {
             parts: [
               {
@@ -115,32 +132,100 @@ Return the data as a JSON array of objects.${learningContext}`;
             ],
           },
           config: {
+            systemInstruction: "You are a precise data extraction assistant. Your primary directive is to extract exactly 5 days of attendance for EVERY person on the sheet. Pay extreme attention to Arabic names, matching them to the known list when possible. Do not skip any rows.",
             responseMimeType: "application/json",
             responseSchema: {
               type: Type.ARRAY,
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  raw_name: { type: Type.STRING },
-                  date: { type: Type.STRING },
-                  check_in: { type: Type.STRING },
-                  check_out: { type: Type.STRING },
-                  confidence: { type: Type.NUMBER },
+                  raw_name: { type: Type.STRING, description: "The employee's name written in Arabic." },
+                  date: { type: Type.STRING, description: "The date of the attendance in YYYY-MM-DD format. Infer from headers if needed." },
+                  check_in: { type: Type.STRING, description: "The check-in time in HH:MM format. Empty string if missing." },
+                  check_out: { type: Type.STRING, description: "The check-out time in HH:MM format. Empty string if missing." },
+                  confidence: { type: Type.NUMBER, description: "Confidence score from 0.0 to 1.0" }
                 },
-                required: ["raw_name", "date", "check_in", "check_out", "confidence"],
-              },
+                required: ["raw_name", "date", "check_in", "check_out", "confidence"]
+              }
             },
+            safetySettings: [
+              {
+                category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+                threshold: HarmBlockThreshold.BLOCK_NONE,
+              },
+              {
+                category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                threshold: HarmBlockThreshold.BLOCK_NONE,
+              },
+              {
+                category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                threshold: HarmBlockThreshold.BLOCK_NONE,
+              },
+              {
+                category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                threshold: HarmBlockThreshold.BLOCK_NONE,
+              },
+            ],
           },
         });
 
         setProgress(70);
 
         const text = response.text;
+        const finishReason = response.candidates?.[0]?.finishReason;
+        console.log(`Gemini finish reason: ${finishReason}`);
+        
         if (!text) {
-          throw new Error("No text returned from Gemini");
+          throw new Error(`No text returned from Gemini. Finish reason: ${finishReason}`);
         }
 
-        const extractedData = JSON.parse(text);
+        let cleanText = text.trim();
+        if (cleanText.startsWith("```json")) {
+          cleanText = cleanText.replace(/^```json\n?/, "").replace(/\n?```$/, "");
+        } else if (cleanText.startsWith("```")) {
+          cleanText = cleanText.replace(/^```\n?/, "").replace(/\n?```$/, "");
+        }
+
+        let extractedData;
+        try {
+          extractedData = JSON.parse(cleanText);
+        } catch (parseError: any) {
+          // Attempt a very basic fix for truncated arrays
+          try {
+            if (!cleanText.endsWith("]")) {
+              const fixedText = cleanText.replace(/,\s*$/, "") + "]";
+              extractedData = JSON.parse(fixedText);
+              console.warn("Successfully recovered truncated JSON by appending bracket");
+            } else {
+              throw parseError;
+            }
+          } catch (e) {
+            // Try regex extraction as a last resort
+            const regex = /{[^{}]*}/g;
+            const matches = cleanText.match(regex);
+            if (matches && matches.length > 0) {
+              extractedData = matches.map(m => {
+                try {
+                  return JSON.parse(m);
+                } catch (err) {
+                  return null;
+                }
+              }).filter(Boolean);
+              
+              if (extractedData.length > 0) {
+                console.warn(`Recovered ${extractedData.length} objects via regex extraction from truncated JSON`);
+              } else {
+                console.error("Failed to parse JSON. Raw text:", text);
+                throw new Error(`Failed to parse AI response: ${parseError.message}. The AI returned invalid formatting. Please try again or crop the image.`);
+              }
+            } else {
+              console.error("Failed to parse JSON. Raw text:", text);
+              throw new Error(`Failed to parse AI response: ${parseError.message}. The AI returned invalid formatting. Please try again or crop the image.`);
+            }
+          }
+        }
+        
+        console.log(`Extracted ${extractedData.length} records from ${file.name}`);
 
         const serverResponse = await fetch("/api/upload", {
           method: "POST",

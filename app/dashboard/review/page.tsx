@@ -1,19 +1,22 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import * as XLSX from "xlsx"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Check, X, AlertTriangle, Save, Download } from "lucide-react"
+import { Check, X, AlertTriangle, Save, Download, ArrowUpDown, Filter, History } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export default function ReviewPage() {
   const [data, setData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValues, setEditValues] = useState<any>({})
+  const [filter, setFilter] = useState("all")
+  const [sortField, setSortField] = useState("date")
+  const [sortOrder, setSortOrder] = useState("desc")
 
   useEffect(() => {
     const fetchData = async () => {
@@ -63,7 +66,7 @@ export default function ReviewPage() {
       }
 
       setData((prev) =>
-        prev.map((item) => (item.id === editingId ? { ...editValues, confidence: 1.0 } : item))
+        prev.map((item) => (item.id === editingId ? { ...editValues, confidence: 1.0, isEdited: true } : item))
       )
       setEditingId(null)
     } catch (error) {
@@ -72,11 +75,52 @@ export default function ReviewPage() {
     }
   }
 
-  const handleExport = () => {
+  const filteredAndSortedData = useMemo(() => {
+    let result = [...data];
+
+    // Filter
+    if (filter === "low") {
+      result = result.filter(item => item.confidence < 0.8);
+    } else if (filter === "edited") {
+      result = result.filter(item => item.isEdited);
+    } else if (filter === "unmatched") {
+      result = result.filter(item => !item.matchedId);
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      let valA = a[sortField] || "";
+      let valB = b[sortField] || "";
+
+      if (sortField === "date") {
+        valA = new Date(valA).getTime();
+        valB = new Date(valB).getTime();
+      }
+
+      if (valA < valB) return sortOrder === "asc" ? -1 : 1;
+      if (valA > valB) return sortOrder === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [data, filter, sortField, sortOrder]);
+
+  const toggleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortOrder("asc");
+    }
+  }
+
+  const handleExport = async () => {
     if (data.length === 0) {
       alert("No data to export.");
       return;
     }
+
+    const XLSX = await import("xlsx");
 
     const exportData = data.map(row => ({
       "Raw OCR Name": row.rawName || "",
@@ -116,18 +160,59 @@ export default function ReviewPage() {
           </div>
         </CardHeader>
         <CardContent>
+          <div className="flex flex-col md:flex-row gap-4 mb-6">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <Select value={filter} onValueChange={setFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filter by..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Records</SelectItem>
+                  <SelectItem value="low">Low Confidence</SelectItem>
+                  <SelectItem value="edited">Already Edited</SelectItem>
+                  <SelectItem value="unmatched">Unmatched Only</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+              <Select value={sortField} onValueChange={setSortField}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Sort by..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="rawName">Name</SelectItem>
+                  <SelectItem value="date">Date</SelectItem>
+                  <SelectItem value="confidence">Confidence</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+              >
+                {sortOrder === "asc" ? "Asc" : "Desc"}
+              </Button>
+            </div>
+          </div>
+
           {loading ? (
             <div className="text-center py-8 text-muted-foreground">Loading review data...</div>
-          ) : data.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">No data to review.</div>
+          ) : filteredAndSortedData.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">No data matches your filters.</div>
           ) : (
           <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Raw OCR Name</TableHead>
+                  <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => toggleSort("rawName")}>
+                    Raw OCR Name {sortField === "rawName" && (sortOrder === "asc" ? "↑" : "↓")}
+                  </TableHead>
                   <TableHead>Matched Employee</TableHead>
-                  <TableHead>Date</TableHead>
+                  <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => toggleSort("date")}>
+                    Date {sortField === "date" && (sortOrder === "asc" ? "↑" : "↓")}
+                  </TableHead>
                   <TableHead>Check In</TableHead>
                   <TableHead>Check Out</TableHead>
                   <TableHead>Confidence</TableHead>
@@ -135,22 +220,29 @@ export default function ReviewPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.map((row) => {
+                {filteredAndSortedData.map((row) => {
                   const isEditing = editingId === row.id
                   const isLowConfidence = row.confidence < 0.8
 
                   return (
                     <TableRow key={row.id} className={isLowConfidence ? "bg-yellow-50/50" : ""}>
                       <TableCell className="font-medium">
-                        {isEditing ? (
-                          <Input
-                            value={editValues.rawName}
-                            onChange={(e) => setEditValues({ ...editValues, rawName: e.target.value })}
-                            className="h-8 w-full"
-                          />
-                        ) : (
-                          row.rawName
-                        )}
+                        <div className="flex items-center gap-2">
+                          {row.isEdited && (
+                            <span title="Manually edited">
+                              <History className="h-3 w-3 text-blue-500" />
+                            </span>
+                          )}
+                          {isEditing ? (
+                            <Input
+                              value={editValues.rawName}
+                              onChange={(e) => setEditValues({ ...editValues, rawName: e.target.value })}
+                              className="h-8 w-full"
+                            />
+                          ) : (
+                            row.rawName
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {isEditing ? (

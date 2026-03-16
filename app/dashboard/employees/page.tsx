@@ -6,7 +6,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Search, Plus, Upload, Download, Trash2, Edit2, X, Check, Loader2 } from "lucide-react"
-import { read, utils, writeFile } from "xlsx"
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<any[]>([])
@@ -35,11 +34,13 @@ export default function EmployeesPage() {
     }
   }
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (employees.length === 0) {
       alert("No employees to export.");
       return;
     }
+
+    const { utils, writeFile } = await import("xlsx");
 
     const exportData = employees.map(emp => ({
       "Employee ID": emp.employeeId || "",
@@ -141,23 +142,50 @@ export default function EmployeesPage() {
     const reader = new FileReader()
     reader.onload = async (evt) => {
       try {
-        const bstr = evt.target?.result
-        const wb = read(bstr, { type: "binary" })
+        const { read, utils } = await import("xlsx");
+        const data = evt.target?.result
+        const wb = read(data, { type: "array" })
         const wsname = wb.SheetNames[0]
         const ws = wb.Sheets[wsname]
-        const data = utils.sheet_to_json(ws) as any[]
+        const jsonData = utils.sheet_to_json(ws) as any[]
         
+        console.log("Imported Excel Data:", jsonData);
+
+        if (jsonData.length === 0) {
+          alert("The Excel file seems to be empty or has no recognizable data.");
+          return;
+        }
+
         let successCount = 0
         let errorCount = 0
+        let duplicateCount = 0
 
-        for (const row of data) {
-          const empData = {
-            employeeId: (row.ID || row.id || row["الرقم الوظيفي"] || "").toString(),
-            nameArabic: row.Name || row.name || row["الاسم"] || "Unknown",
-            department: row.Department || row.department || row["القسم"] || "",
+        for (const row of jsonData) {
+          // Try to find employee ID and Name using various possible header names
+          const employeeId = (
+            row.ID || row.id || row["الرقم الوظيفي"] || row["رقم الموظف"] || 
+            row["Employee ID"] || row["EmployeeID"] || row["Emp ID"] || ""
+          ).toString().trim();
+
+          const nameArabic = (
+            row.Name || row.name || row["الاسم"] || row["اسم الموظف"] || 
+            row["Name (Arabic)"] || row["Arabic Name"] || ""
+          ).toString().trim();
+
+          const department = (
+            row.Department || row.department || row["القسم"] || row["الإدارة"] || ""
+          ).toString().trim();
+
+          if (!employeeId || !nameArabic) {
+            console.warn("Skipping row due to missing ID or Name:", row);
+            continue;
           }
 
-          if (!empData.employeeId) continue;
+          const empData = {
+            employeeId,
+            nameArabic,
+            department,
+          }
 
           try {
             const res = await fetch('/api/employees', {
@@ -165,25 +193,39 @@ export default function EmployeesPage() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(empData)
             })
-            if (res.ok) successCount++
-            else errorCount++
+            
+            if (res.ok) {
+              successCount++
+            } else {
+              const errorData = await res.json();
+              if (errorData.error === 'Employee ID already exists') {
+                duplicateCount++
+              } else {
+                errorCount++
+              }
+            }
           } catch (e) {
             errorCount++
           }
         }
 
-        alert(`Successfully imported ${successCount} employees. ${errorCount > 0 ? `Failed to import ${errorCount} employees.` : ''}`)
+        let message = `Import completed.\n- Successfully imported: ${successCount}`;
+        if (duplicateCount > 0) message += `\n- Already existed (skipped): ${duplicateCount}`;
+        if (errorCount > 0) message += `\n- Failed: ${errorCount}`;
+        
+        alert(message);
         
         fetchEmployees()
       } catch (error) {
-        alert("Failed to parse Excel file")
+        console.error("Excel parse error:", error);
+        alert("Failed to parse Excel file. Please ensure it is a valid .xlsx or .xls file.");
       } finally {
         if (fileInputRef.current) {
           fileInputRef.current.value = ""
         }
       }
     }
-    reader.readAsBinaryString(file)
+    reader.readAsArrayBuffer(file)
   }
 
   return (

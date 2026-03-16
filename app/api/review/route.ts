@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { PrismaClient } from "@prisma/client"
+import { prisma } from "@/lib/prisma"
 import jwt from 'jsonwebtoken'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-do-not-use-in-prod';
@@ -12,8 +12,6 @@ export async function PUT(req: Request) {
     if (!id) {
       return NextResponse.json({ error: "Missing ID" }, { status: 400 });
     }
-
-    const prisma = new PrismaClient();
 
     // Find employee if matchedId is provided
     let employeeId = null;
@@ -33,11 +31,10 @@ export async function PUT(req: Request) {
         employeeId: employeeId,
         checkIn: checkIn,
         checkOut: checkOut,
-        confidenceScore: 1.0 // Set to 1.0 since it was manually reviewed
+        confidenceScore: 1.0, // Set to 1.0 since it was manually reviewed
+        isManuallyCorrected: true
       }
     });
-
-    await prisma.$disconnect();
 
     return NextResponse.json({ success: true, data: updatedRecord });
   } catch (error) {
@@ -58,8 +55,6 @@ export async function GET(req: Request) {
         console.error("JWT verification failed:", e);
       }
     }
-
-    const prisma = new PrismaClient();
     
     let recognizedData: any[] = [];
     
@@ -85,7 +80,7 @@ export async function GET(req: Request) {
     if (recognizedData.length === 0) {
       // Just fetch the latest recognized data globally
       recognizedData = await prisma.recognizedData.findMany({
-        take: 50,
+        take: 500,
         orderBy: { createdAt: 'desc' },
         include: { employee: true }
       });
@@ -100,13 +95,12 @@ export async function GET(req: Request) {
         date: item.date ? item.date.toISOString().split('T')[0] : null,
         checkIn: item.checkIn,
         checkOut: item.checkOut,
-        confidence: item.confidenceScore
+        confidence: item.confidenceScore,
+        isEdited: item.isManuallyCorrected
       }));
     } else {
       data = [];
     }
-    
-    await prisma.$disconnect();
     
     return NextResponse.json(data);
   } catch (error) {

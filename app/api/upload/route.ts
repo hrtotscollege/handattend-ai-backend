@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { PrismaClient } from "@prisma/client"
+import { prisma } from "@/lib/prisma"
 import jwt from 'jsonwebtoken'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-do-not-use-in-prod';
@@ -24,8 +24,6 @@ export async function POST(req: Request) {
         console.error("JWT verification failed:", e);
       }
     }
-
-    const prisma = new PrismaClient();
     
     // Fallback to first user if no token
     if (!userId) {
@@ -88,7 +86,6 @@ export async function POST(req: Request) {
     });
 
     await Promise.all(recognizedDataPromises);
-    await prisma.$disconnect();
 
     return NextResponse.json({ 
       message: "Data saved successfully",
