@@ -4,3 +4,4 @@ services:
     env: docker
     rootDir: ai-service
     dockerfilePath: ./Dockerfile
+    healthCheckPath: /
