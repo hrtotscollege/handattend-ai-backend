@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireAuth } from '@/lib/auth';
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await requireAuth(req);
+
     const { id } = await params;
     const data = await req.json();
 
@@ -17,6 +20,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
     return NextResponse.json(employee);
   } catch (error: any) {
+    if (error.message === 'Unauthorized' || error.message === 'Forbidden') {
+      return NextResponse.json({ error: error.message }, { status: error.message === 'Unauthorized' ? 401 : 403 });
+    }
     console.error('Error updating employee:', error);
     if (error.code === 'P2025') {
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
@@ -30,6 +36,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await requireAuth(req);
+
     const { id } = await params;
 
     await prisma.$transaction(async (tx) => {
@@ -52,6 +60,9 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 
     return NextResponse.json({ success: true, message: 'Employee deleted successfully' });
   } catch (error: any) {
+    if (error.message === 'Unauthorized' || error.message === 'Forbidden') {
+      return NextResponse.json({ error: error.message }, { status: error.message === 'Unauthorized' ? 401 : 403 });
+    }
     console.error('Error deleting employee:', error);
     if (error.code === 'P2025') {
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 });

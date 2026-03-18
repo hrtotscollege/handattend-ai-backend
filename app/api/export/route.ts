@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server"
 import { write, utils } from "xlsx"
 import { prisma } from "@/lib/prisma"
+import { requireAuth } from "@/lib/auth"
 
 export async function GET(req: Request) {
   try {
+    const user = await requireAuth(req);
+
     const { searchParams } = new URL(req.url)
     const sheetId = searchParams.get("sheetId")
 
@@ -47,7 +50,10 @@ export async function GET(req: Request) {
       }
     })
 
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === 'Unauthorized' || error.message === 'Forbidden') {
+      return NextResponse.json({ error: error.message }, { status: error.message === 'Unauthorized' ? 401 : 403 });
+    }
     console.error("Export error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }

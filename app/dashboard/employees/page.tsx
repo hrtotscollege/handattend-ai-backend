@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Search, Plus, Upload, Download, Trash2, Edit2, X, Check, Loader2 } from "lucide-react"
+import * as XLSX from "xlsx"
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<any[]>([])
@@ -14,6 +15,15 @@ export default function EmployeesPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({ employeeId: "", nameArabic: "", department: "" })
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // UI State
+  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null)
+  const [employeeToDelete, setEmployeeToDelete] = useState<string | null>(null)
+
+  const showMessage = (text: string, type: "success" | "error" = "success") => {
+    setMessage({ text, type })
+    setTimeout(() => setMessage(null), 5000)
+  }
 
   useEffect(() => {
     fetchEmployees()
@@ -28,7 +38,7 @@ export default function EmployeesPage() {
       setEmployees(data)
     } catch (error) {
       console.error(error)
-      alert("Failed to load employees")
+      showMessage("Failed to load employees", "error")
     } finally {
       setLoading(false)
     }
@@ -36,11 +46,9 @@ export default function EmployeesPage() {
 
   const handleExport = async () => {
     if (employees.length === 0) {
-      alert("No employees to export.");
+      showMessage("No employees to export.", "error");
       return;
     }
-
-    const { utils, writeFile } = await import("xlsx");
 
     const exportData = employees.map(emp => ({
       "Employee ID": emp.employeeId || "",
@@ -48,11 +56,11 @@ export default function EmployeesPage() {
       "Department": emp.department || ""
     }));
 
-    const worksheet = utils.json_to_sheet(exportData);
-    const workbook = utils.book_new();
-    utils.book_append_sheet(workbook, worksheet, "Employees");
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Employees");
 
-    writeFile(workbook, "employees_export.xlsx");
+    XLSX.writeFile(workbook, "employees_export.xlsx");
   }
 
   const filteredEmployees = employees.filter(emp => 
@@ -61,17 +69,20 @@ export default function EmployeesPage() {
     (emp.department || "").includes(searchQuery)
   )
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this employee?")) return;
+  const confirmDeleteEmployee = async () => {
+    if (!employeeToDelete) return;
     try {
-      const res = await fetch(`/api/employees/${id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/employees/${employeeToDelete}`, { method: 'DELETE' })
       if (!res.ok) {
         const data = await res.json()
         throw new Error(data.error || 'Failed to delete')
       }
-      setEmployees(employees.filter(emp => emp.id !== id))
+      setEmployees(employees.filter(emp => emp.id !== employeeToDelete))
+      setEmployeeToDelete(null)
+      showMessage("Employee deleted successfully.")
     } catch (error: any) {
-      alert(error.message)
+      showMessage(error.message, "error")
+      setEmployeeToDelete(null)
     }
   }
 
@@ -87,7 +98,7 @@ export default function EmployeesPage() {
   const handleSaveEdit = async (id: string) => {
     try {
       if (!editForm.employeeId || !editForm.nameArabic) {
-        alert("Employee ID and Name are required")
+        showMessage("Employee ID and Name are required", "error")
         return
       }
 
@@ -115,8 +126,9 @@ export default function EmployeesPage() {
       }
       
       setEditingId(null)
+      showMessage(isNew ? "Employee added successfully" : "Employee updated successfully")
     } catch (error: any) {
-      alert(error.message)
+      showMessage(error.message, "error")
     }
   }
 
@@ -142,17 +154,16 @@ export default function EmployeesPage() {
     const reader = new FileReader()
     reader.onload = async (evt) => {
       try {
-        const { read, utils } = await import("xlsx");
         const data = evt.target?.result
-        const wb = read(data, { type: "array" })
+        const wb = XLSX.read(data, { type: "array" })
         const wsname = wb.SheetNames[0]
         const ws = wb.Sheets[wsname]
-        const jsonData = utils.sheet_to_json(ws) as any[]
+        const jsonData = XLSX.utils.sheet_to_json(ws) as any[]
         
         console.log("Imported Excel Data:", jsonData);
 
         if (jsonData.length === 0) {
-          alert("The Excel file seems to be empty or has no recognizable data.");
+          showMessage("The Excel file seems to be empty or has no recognizable data.", "error");
           return;
         }
 
@@ -209,16 +220,16 @@ export default function EmployeesPage() {
           }
         }
 
-        let message = `Import completed.\n- Successfully imported: ${successCount}`;
-        if (duplicateCount > 0) message += `\n- Already existed (skipped): ${duplicateCount}`;
-        if (errorCount > 0) message += `\n- Failed: ${errorCount}`;
+        let msg = `Import completed.\n- Successfully imported: ${successCount}`;
+        if (duplicateCount > 0) msg += `\n- Already existed (skipped): ${duplicateCount}`;
+        if (errorCount > 0) msg += `\n- Failed: ${errorCount}`;
         
-        alert(message);
+        showMessage(msg, errorCount > 0 ? "error" : "success");
         
         fetchEmployees()
       } catch (error) {
         console.error("Excel parse error:", error);
-        alert("Failed to parse Excel file. Please ensure it is a valid .xlsx or .xls file.");
+        showMessage("Failed to parse Excel file. Please ensure it is a valid .xlsx or .xls file.", "error");
       } finally {
         if (fileInputRef.current) {
           fileInputRef.current.value = ""
@@ -229,7 +240,30 @@ export default function EmployeesPage() {
   }
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-6 relative">
+      {message && (
+        <div className={`fixed top-4 right-4 z-50 p-4 rounded-md shadow-lg flex items-center gap-2 text-white ${message.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>
+          {message.type === 'success' ? <Check className="h-5 w-5" /> : <X className="h-5 w-5" />}
+          <span className="whitespace-pre-wrap">{message.text}</span>
+          <button onClick={() => setMessage(null)} className="ml-4 hover:opacity-80">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {employeeToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+            <h3 className="text-lg font-bold mb-2">Delete Employee</h3>
+            <p className="text-slate-600 mb-6">Are you sure you want to delete this employee? This action cannot be undone.</p>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setEmployeeToDelete(null)}>Cancel</Button>
+              <Button variant="destructive" onClick={confirmDeleteEmployee}>Delete Employee</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
@@ -342,7 +376,7 @@ export default function EmployeesPage() {
                           <Button variant="ghost" size="icon" onClick={() => handleEditClick(employee)} className="h-8 w-8">
                             <Edit2 className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(employee.id)} className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50">
+                          <Button variant="ghost" size="icon" onClick={() => setEmployeeToDelete(employee.id)} className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50">
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>

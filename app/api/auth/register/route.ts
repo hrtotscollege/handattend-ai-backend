@@ -22,6 +22,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'User already exists' }, { status: 400 });
     }
 
+    // Check if this is the first user
+    const userCount = await prisma.user.count();
+    const isFirstUser = userCount === 0;
+
     // Hash password
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
@@ -31,9 +35,18 @@ export async function POST(req: Request) {
       data: {
         email,
         passwordHash,
-        role: 'ADMIN' // Defaulting to ADMIN for the first user
+        role: isFirstUser ? 'ADMIN' : 'USER',
+        isActive: isFirstUser ? true : false,
       }
     });
+
+    if (!user.isActive) {
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Registration successful. Please wait for an administrator to activate your account.',
+        user: { id: user.id, email: user.email, role: user.role, isActive: user.isActive } 
+      });
+    }
 
     // Generate JWT
     const token = jwt.sign(

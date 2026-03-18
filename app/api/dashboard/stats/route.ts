@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { requireAuth } from "@/lib/auth"
 
 export async function GET(req: Request) {
   try {
+    const user = await requireAuth(req);
+
     // Get start of today
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
@@ -50,7 +53,7 @@ export async function GET(req: Request) {
     const completedSheetsToday = await prisma.attendanceSheet.findMany({
       where: {
         status: "COMPLETED",
-        createdAt: {
+        updatedAt: {
           gte: startOfToday,
         }
       },
@@ -61,11 +64,20 @@ export async function GET(req: Request) {
     });
 
     let avgProcessingTimeToday = 0;
+    let formattedProcessingTime = 'N/A';
     if (completedSheetsToday.length > 0) {
       const totalDiff = completedSheetsToday.reduce((acc, curr) => {
         return acc + (curr.updatedAt.getTime() - curr.createdAt.getTime());
       }, 0);
       avgProcessingTimeToday = totalDiff / completedSheetsToday.length / 1000; // in seconds
+      
+      if (avgProcessingTimeToday < 60) {
+        formattedProcessingTime = `${avgProcessingTimeToday.toFixed(1)}s`;
+      } else {
+        const minutes = Math.floor(avgProcessingTimeToday / 60);
+        const seconds = Math.round(avgProcessingTimeToday % 60);
+        formattedProcessingTime = `${minutes}m ${seconds}s`;
+      }
     }
 
     return NextResponse.json({
@@ -74,9 +86,12 @@ export async function GET(req: Request) {
       totalEmployees,
       employeesAddedToday,
       avgAccuracyToday: avgAccuracyToday.toFixed(1),
-      avgProcessingTimeToday: avgProcessingTimeToday.toFixed(1)
+      avgProcessingTimeToday: formattedProcessingTime
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === 'Unauthorized' || error.message === 'Forbidden') {
+      return NextResponse.json({ error: error.message }, { status: error.message === 'Unauthorized' ? 401 : 403 });
+    }
     console.error("Error fetching dashboard stats:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

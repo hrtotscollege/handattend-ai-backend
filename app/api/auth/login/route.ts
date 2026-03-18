@@ -29,6 +29,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
+    if (!user.isActive) {
+      return NextResponse.json({ error: 'Account is inactive. Please wait for an administrator to activate your account.' }, { status: 401 });
+    }
+
     // Generate JWT
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },

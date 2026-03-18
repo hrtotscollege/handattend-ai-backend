@@ -12,12 +12,14 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setSuccess('');
 
     if (password !== confirmPassword) {
       setError('Passwords do not match');
@@ -32,10 +34,27 @@ export default function RegisterPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get('content-type');
+      let data;
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        console.error('Non-JSON response:', text);
+        throw new Error('Server returned an unexpected response. Please try again later.');
+      }
 
       if (!res.ok) {
         throw new Error(data.error || 'Failed to register');
+      }
+
+      if (data.user && !data.user.isActive) {
+        setError('');
+        setSuccess(data.message || 'Registration successful. Please wait for an administrator to activate your account.');
+        setTimeout(() => {
+          router.push('/login');
+        }, 3000);
+        return;
       }
 
       router.push('/dashboard');
@@ -65,6 +84,11 @@ export default function RegisterPage() {
           {error && (
             <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive">
               {error}
+            </div>
+          )}
+          {success && (
+            <div className="rounded-md bg-emerald-500/15 p-3 text-sm text-emerald-600">
+              {success}
             </div>
           )}
           

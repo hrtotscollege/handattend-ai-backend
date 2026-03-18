@@ -6,8 +6,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Check, X, AlertTriangle, Save, Download, ArrowUpDown, Filter, History } from "lucide-react"
+import { Check, X, AlertTriangle, Save, Download, ArrowUpDown, Filter, History, CheckCircle } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import * as XLSX from "xlsx"
 
 export default function ReviewPage() {
   const [data, setData] = useState<any[]>([])
@@ -17,8 +18,28 @@ export default function ReviewPage() {
   const [filter, setFilter] = useState("all")
   const [sortField, setSortField] = useState("date")
   const [sortOrder, setSortOrder] = useState("desc")
+  const [confidenceThreshold, setConfidenceThreshold] = useState(0.8)
+  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null)
+
+  const showMessage = (text: string, type: "success" | "error" = "success") => {
+    setMessage({ text, type })
+    setTimeout(() => setMessage(null), 5000)
+  }
 
   useEffect(() => {
+    // Load config
+    try {
+      const storedConfig = localStorage.getItem("handattend_ai_config");
+      if (storedConfig) {
+        const config = JSON.parse(storedConfig);
+        if (config.confidenceThreshold) {
+          setConfidenceThreshold(parseFloat(config.confidenceThreshold) / 100);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load AI config", e);
+    }
+
     const fetchData = async () => {
       try {
         const response = await fetch('/api/review');
@@ -69,9 +90,10 @@ export default function ReviewPage() {
         prev.map((item) => (item.id === editingId ? { ...editValues, confidence: 1.0, isEdited: true } : item))
       )
       setEditingId(null)
+      showMessage("Changes saved successfully.")
     } catch (error) {
       console.error("Error saving edit:", error);
-      alert("Failed to save changes. Please try again.");
+      showMessage("Failed to save changes. Please try again.", "error");
     }
   }
 
@@ -80,7 +102,7 @@ export default function ReviewPage() {
 
     // Filter
     if (filter === "low") {
-      result = result.filter(item => item.confidence < 0.8);
+      result = result.filter(item => item.confidence < confidenceThreshold);
     } else if (filter === "edited") {
       result = result.filter(item => item.isEdited);
     } else if (filter === "unmatched") {
@@ -103,7 +125,7 @@ export default function ReviewPage() {
     });
 
     return result;
-  }, [data, filter, sortField, sortOrder]);
+  }, [data, filter, sortField, sortOrder, confidenceThreshold]);
 
   const toggleSort = (field: string) => {
     if (sortField === field) {
@@ -116,11 +138,9 @@ export default function ReviewPage() {
 
   const handleExport = async () => {
     if (data.length === 0) {
-      alert("No data to export.");
+      showMessage("No data to export.", "error");
       return;
     }
-
-    const XLSX = await import("xlsx");
 
     const exportData = data.map(row => ({
       "Raw OCR Name": row.rawName || "",
@@ -139,7 +159,17 @@ export default function ReviewPage() {
   }
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-6 relative">
+      {message && (
+        <div className={`fixed top-4 right-4 z-50 p-4 rounded-md shadow-lg flex items-center gap-2 text-white ${message.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>
+          {message.type === 'success' ? <Check className="h-5 w-5" /> : <X className="h-5 w-5" />}
+          <span className="whitespace-pre-wrap">{message.text}</span>
+          <button onClick={() => setMessage(null)} className="ml-4 hover:opacity-80">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
@@ -222,7 +252,7 @@ export default function ReviewPage() {
               <TableBody>
                 {filteredAndSortedData.map((row) => {
                   const isEditing = editingId === row.id
-                  const isLowConfidence = row.confidence < 0.8
+                  const isLowConfidence = row.confidence < confidenceThreshold
 
                   return (
                     <TableRow key={row.id} className={isLowConfidence ? "bg-yellow-50/50" : ""}>
