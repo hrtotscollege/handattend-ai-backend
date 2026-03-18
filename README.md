@@ -25,11 +25,11 @@ The frontend is built with Next.js App Router and Tailwind CSS. The backend uses
    npm install
    ```
 2. Set up environment variables:
-   Copy `.env.example` to `.env` and update the `DATABASE_URL` and `JWT_SECRET`.
+   Copy `.env.example` to `.env` and update the `DATABASE_URL`, `DIRECT_URL`, and `JWT_SECRET`.
 3. Initialize the database:
    ```bash
    npx prisma generate
-   npx prisma db push
+   npm run db:push
    ```
 4. Run the development server:
    ```bash
@@ -71,8 +71,13 @@ Excel generation is implemented in `/app/api/export/route.ts` using the `xlsx` l
 Deploy easily to Vercel:
 1. Push the repository to GitHub.
 2. Import the project in Vercel.
-3. Add the `DATABASE_URL`, `JWT_SECRET`, and `AI_SERVICE_URL` environment variables.
+3. Add the `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, and `AI_SERVICE_URL` environment variables.
 4. Deploy.
+
+Notes for Supabase + Vercel:
+- Use the pooled Supabase connection string for `DATABASE_URL` so the running app can handle serverless connections more safely.
+- Use the direct Supabase connection string for `DIRECT_URL` so Prisma CLI commands can connect without PgBouncer/transaction-pooling issues.
+- The Vercel build no longer runs `prisma db push`, so deployment does not fail just because the build step cannot reach the database. Run `npm run db:push` manually when you need to create or update tables.
 
 ### AI Service (Python)
 Deploy the AI service using Docker to a GPU-enabled cloud provider (e.g., AWS EC2, Google Cloud Run with GPU, or RunPod).
